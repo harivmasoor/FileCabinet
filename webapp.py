@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, redirect, url_for, flash
 from uuid import uuid4
 import openai
 import pinecone
-import PyPDF2
+from pypdf import PdfReader
 from io import BytesIO
 from dotenv import load_dotenv
 import os
@@ -32,7 +32,7 @@ def index():
         # Extract text and get embeddings
         vectors_to_upsert = []
         for doc_id, pdf in zip(doc_ids, pdfs):
-            reader = PyPDF2.PdfReader(BytesIO(pdf.read()))
+            reader = PdfReader(BytesIO(pdf.read()))
             text = " ".join([page.extract_text() for page in reader.pages])
             pdf_data_store[doc_id] = text 
             embedding = get_openai_embedding(text)
@@ -45,7 +45,7 @@ def index():
                 'id': doc_id,
                 'values': embedding,
                 'metadata': {
-                    'text_excerpt': text[:1000],  # Store the first 1000 characters as an example
+                    'full_text': text,  # Store the first 1000 characters as an example
                     # Or you could store the entire text if desired:
                     # 'full_text': text
                 }
@@ -87,7 +87,7 @@ def chat():
     if results['results'] and results['results'][0]['matches']:
         top_match = results['results'][0]['matches'][0]
         matched_metadata = top_match.get('metadata', {})
-        matched_text = matched_metadata.get('text_excerpt', 'No matched text found')
+        matched_text = matched_metadata.get('full_text', 'No matched text found')
         # Now, query GPT to get a response
         gpt_response = ask_gpt(user_message, matched_text)
     else:

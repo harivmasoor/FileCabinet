@@ -21,7 +21,7 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 # Pinecone Setup
 pinecone.init(api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENVIRONMENT"))
 pinecone_index = pinecone.Index("pdf-embeddings")
-
+pdf_data_store = {}
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -34,6 +34,7 @@ def index():
         for doc_id, pdf in zip(doc_ids, pdfs):
             reader = PyPDF2.PdfReader(BytesIO(pdf.read()))
             text = " ".join([page.extract_text() for page in reader.pages])
+            pdf_data_store[doc_id] = text 
             embedding = get_openai_embedding(text)
 
             # Ensure embedding is a list of floats
@@ -42,7 +43,12 @@ def index():
 
             vectors_to_upsert.append({
                 'id': doc_id,
-                'values': embedding
+                'values': embedding,
+                'metadata': {
+                    'text_excerpt': text[:1000],  # Store the first 1000 characters as an example
+                    # Or you could store the entire text if desired:
+                    # 'full_text': text
+                }
             })
 
         # Upsert to Pinecone
@@ -59,7 +65,7 @@ def search():
   query = request.form['query']
   embedding = get_openai_embedding(query)  
 
-  results = pinecone_index.query(queries=[embedding], top_k=5)
+  results = pinecone_index.query(queries=[embedding], top_k=50)
   return render_template('results.html', results=results)
 
 def get_openai_embedding(text):
@@ -69,6 +75,30 @@ def get_openai_embedding(text):
     return_embeddings=True
   )
   return response['data'][0]['embedding'] 
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_message = request.form['message']
+    embedding = get_openai_embedding(user_message)
+    
+    results = pinecone_index.query(queries=[embedding], top_k=5, include_metadata=True)
+    print("Pinecone Response:", results)
+
+    if results['results'] and results['results'][0]['matches']:
+        matched_metadata = results['results'][0]['matches'][0].get('metadata', {})
+        matched_id = results['results'][0]['matches'][0]['id']
+        matched_text = matched_metadata.get('text_excerpt', 'No matched text found')
+    else:
+        matched_id = None
+        matched_text = "No matches found"
+
+    response_data = {
+        "response": f"Top matched documents: {matched_id}",
+        "matched_text": matched_text
+    }
+    
+    return render_template('results.html', results=response_data)
+
 
 if __name__ == '__main__':
   app.run(debug=True)

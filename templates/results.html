@@ -1,4 +1,6 @@
 <h1>Search Results</h1>
-{% for result in results %}
-    <p>{{ result }}</p>
-{% endfor %}
+<h2>Matched Document ID:</h2>
+<p>{{ results.response }}</p>
+<h2>Matched Text:</h2>
+<p>{{ results.matched_text }}</p>
+

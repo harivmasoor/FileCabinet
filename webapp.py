@@ -6,7 +6,7 @@ import PyPDF2
 from io import BytesIO
 from dotenv import load_dotenv
 import os
-
+from flask import session
 load_dotenv()
 
 
@@ -82,22 +82,39 @@ def chat():
     embedding = get_openai_embedding(user_message)
     
     results = pinecone_index.query(queries=[embedding], top_k=5, include_metadata=True)
-    print("Pinecone Response:", results)
+    print(results)
 
     if results['results'] and results['results'][0]['matches']:
-        matched_metadata = results['results'][0]['matches'][0].get('metadata', {})
-        matched_id = results['results'][0]['matches'][0]['id']
+        top_match = results['results'][0]['matches'][0]
+        matched_metadata = top_match.get('metadata', {})
         matched_text = matched_metadata.get('text_excerpt', 'No matched text found')
+        # Now, query GPT to get a response
+        gpt_response = ask_gpt(user_message, matched_text)
     else:
-        matched_id = None
         matched_text = "No matches found"
+        gpt_response = f"No matches found for '{user_message}'. Please refine your query."
 
-    response_data = {
-        "response": f"Top matched documents: {matched_id}",
-        "matched_text": matched_text
-    }
-    
-    return render_template('results.html', results=response_data)
+    # Store GPT response and user message in the session for chat history
+    if 'chat_history' not in session:
+        session['chat_history'] = []
+    session['chat_history'].extend([{"user": user_message}, {"gpt": gpt_response}])
+
+    return render_template('index.html', chat_history=session['chat_history'])
+
+def ask_gpt(user_message, context):
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": f"The user is asking: {user_message}"},
+        {"role": "assistant", "content": f"Here's a matched document excerpt: {context}"}
+    ]
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=messages
+    )
+    # Extract the assistant's message from the response
+    gpt_response = response.choices[0].message['content']
+    return gpt_response
+
 
 
 if __name__ == '__main__':
